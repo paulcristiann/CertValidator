@@ -4,17 +4,22 @@ import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.paint.Paint;
 import javafx.stage.FileChooser;
+import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cms.*;
+import org.bouncycastle.util.Store;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
+import java.io.*;
 import java.net.URL;
-import java.security.PublicKey;
+import java.security.*;
 import java.security.cert.*;
+import java.util.Collection;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.ResourceBundle;
 
 public class CertValidController implements Initializable {
@@ -36,9 +41,17 @@ public class CertValidController implements Initializable {
     public Label cp;
     public Label cdp;
     public Label status;
+    public Label rezSemnare;
+    public TextArea campXML;
+    public Label eroareXML;
+
+    private X509Certificate cer = null;
 
     @FXML
     private void open(){
+
+        campXML.setText("");
+        rezSemnare.setText("");
 
         FileChooser fileChooser = new FileChooser();
         File selectedFile = fileChooser.showOpenDialog(null);
@@ -63,7 +76,6 @@ public class CertValidController implements Initializable {
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
-        X509Certificate cer = null;
         try {
             cer = (X509Certificate) fact.generateCertificate(is);
             valid = true;
@@ -183,11 +195,11 @@ public class CertValidController implements Initializable {
 
             if(valid){
                 status.setTextFill(Paint.valueOf("green"));
-                status.setText("Certificatul este conform");
+                status.setText("Structura certificatului este conforma");
             }
             else{
                 status.setTextFill(Paint.valueOf("red"));
-                status.setText("Certificatul nu este conform");
+                status.setText("Structura certificatului nu este conforma");
             }
 
 
@@ -198,6 +210,69 @@ public class CertValidController implements Initializable {
             structura.setVisible(false);
             e.printStackTrace();
         }
+
+    }
+
+    @FXML
+    private void semnare(){
+
+        FileChooser fileChooser = new FileChooser();
+        File selectedFile = fileChooser.showOpenDialog(null);
+        FileInputStream is = null;
+
+        try{
+
+            byte[] buffer = new byte[(int) selectedFile.length()];
+            is = new FileInputStream(selectedFile);
+            DataInputStream in = new DataInputStream(is);
+            in.readFully(buffer);
+            in.close();
+
+            //Corresponding class of signed_data is CMSSignedData
+            CMSSignedData signature = new CMSSignedData(buffer);
+            Store cs = signature.getCertificates();
+            SignerInformationStore signers = signature.getSignerInfos();
+            Collection c = signers.getSigners();
+            Iterator it = c.iterator();
+
+            //Raportul xml va fi salvat in data
+            byte[] data = null;
+
+            while (it.hasNext()) {
+
+                SignerInformation signer = (SignerInformation) it.next();
+                Collection certCollection = cs.getMatches(signer.getSID());
+                Iterator certIt = certCollection.iterator();
+                X509CertificateHolder cert = (X509CertificateHolder) certIt.next();
+                X509Certificate certFolositLaSemnare = new JcaX509CertificateConverter().getCertificate(cert); //din raportul semnat
+                CMSProcessable sc = signature.getSignedContent();
+
+                data = (byte[]) sc.getContent();
+
+                System.out.println(cert.getSubject());
+
+                String str = new String(data, "UTF-8"); // for UTF-8 encoding
+                campXML.setWrapText(true);
+                campXML.setText(str);
+
+                if(certFolositLaSemnare.getPublicKey() == cer.getPublicKey())
+                {
+                    rezSemnare.setTextFill(Paint.valueOf("green"));
+                    rezSemnare.setText("Raportul a fost semnat cu acest certificat");
+                }
+                else{
+                    rezSemnare.setTextFill(Paint.valueOf("red"));
+                    rezSemnare.setText("Raportul xml nu a fost semnat cu acest certificat");
+                }
+            }
+
+        }catch(Exception e){
+            eroareXML.setTextFill(Paint.valueOf("red"));
+            eroareXML.setText("Fisierul nu are forma de raport semnat!");
+            System.out.println(e);
+        }
+
+
 
     }
 
